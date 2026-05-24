@@ -14,6 +14,7 @@ import { autoUpdater } from 'electron-updater';
 import log from 'electron-log';
 import MenuBuilder from './menu';
 import { resolveHtmlPath } from './util';
+import { initDb, dbService } from './db';
 
 class AppUpdater {
   constructor() {
@@ -24,6 +25,25 @@ class AppUpdater {
 }
 
 let mainWindow: BrowserWindow | null = null;
+
+// Database IPC Handlers
+ipcMain.handle('db:getProjects', () => dbService.getProjects());
+ipcMain.handle('db:saveProject', (_, project) =>
+  dbService.saveProject(project),
+);
+ipcMain.handle('db:deleteProject', (_, id) => dbService.deleteProject(id));
+
+ipcMain.handle('db:getChats', (_, projectId) => dbService.getChats(projectId));
+ipcMain.handle('db:saveChat', (_, chat) => dbService.saveChat(chat));
+ipcMain.handle('db:deleteChat', (_, id) => dbService.deleteChat(id));
+
+ipcMain.handle('db:getMessages', (_, chatId) => dbService.getMessages(chatId));
+ipcMain.handle('db:saveMessage', (_, message, content) =>
+  dbService.saveMessage(message, content),
+);
+ipcMain.handle('db:addMessageSibling', (_, messageId, content) =>
+  dbService.addMessageSibling(messageId, content),
+);
 
 ipcMain.on('ipc-example', async (event, arg) => {
   const msgTemplate = (pingPong: string) => `IPC test: ${pingPong}`;
@@ -126,7 +146,8 @@ app.on('window-all-closed', () => {
 
 app
   .whenReady()
-  .then(() => {
+  .then(async () => {
+    await initDb();
     createWindow();
     app.on('activate', () => {
       // On macOS it's common to re-create a window in the app when the

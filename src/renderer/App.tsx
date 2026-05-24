@@ -22,12 +22,11 @@ export default function App() {
   const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
 
   // Core Data State
-  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
-  const [activeProjectId, setActiveProjectId] = useState<string>('p1');
-  const [chats, setChats] = useState<Chat[]>(INITIAL_CHATS);
-  const [activeChatId, setActiveChatId] = useState<string>('c1');
-  const [messages, setMessages] =
-    useState<Record<string, Message[]>>(INITIAL_MESSAGES);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [activeProjectId, setActiveProjectId] = useState<string>('');
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string>('');
+  const [messages, setMessages] = useState<Record<string, Message[]>>({});
 
   // Settings & Toggles
   const [provider, setProvider] = useState<string>('OpenRouter');
@@ -69,12 +68,85 @@ export default function App() {
     scrollToBottom();
   }, [messages, activeChatId]);
 
+  // Load data from DB on mount
+  useEffect(() => {
+    const loadInitialData = async () => {
+      let dbProjects = await window.electron.db.getProjects();
+      if (dbProjects.length === 0) {
+        // First run: seed with constants
+        // eslint-disable-next-line no-restricted-syntax
+        for (const p of INITIAL_PROJECTS) {
+          // eslint-disable-next-line no-await-in-loop
+          await window.electron.db.saveProject(p);
+        }
+        dbProjects = await window.electron.db.getProjects();
+      }
+      setProjects(dbProjects);
+      if (dbProjects.length > 0) setActiveProjectId(dbProjects[0].id);
+
+      let dbChats = await window.electron.db.getChats();
+      if (dbChats.length === 0) {
+        // First run: seed with constants
+        // eslint-disable-next-line no-restricted-syntax
+        for (const c of INITIAL_CHATS) {
+          const chatToSave = {
+            id: c.id,
+            projectId: dbProjects[0]?.id || 'p1',
+            name: c.name,
+            isHidden: c.hidden,
+          };
+          // eslint-disable-next-line no-await-in-loop
+          await window.electron.db.saveChat(chatToSave);
+
+          // Seed messages for initial chats
+          const initialMsgs = INITIAL_MESSAGES[c.id] || [];
+          // eslint-disable-next-line no-restricted-syntax
+          for (const m of initialMsgs) {
+            // eslint-disable-next-line no-await-in-loop
+            await window.electron.db.saveMessage(
+              { ...m, chatId: c.id, parentId: null },
+              m.content,
+            );
+            // If there are more siblings, add them too
+            if (m.siblings && m.siblings.length > 1) {
+              // eslint-disable-next-line no-plusplus
+              for (let i = 1; i < m.siblings.length; i++) {
+                // eslint-disable-next-line no-await-in-loop
+                await window.electron.db.addMessageSibling(m.id, m.siblings[i]);
+              }
+            }
+          }
+        }
+        dbChats = await window.electron.db.getChats();
+      }
+      const normalizedChats = dbChats.map((c: any) => ({
+        ...c,
+        hidden: c.isHidden,
+      }));
+      setChats(normalizedChats);
+      if (normalizedChats.length > 0) setActiveChatId(normalizedChats[0].id);
+    };
+
+    loadInitialData();
+  }, []);
+
+  // Load messages whenever activeChatId changes
+  useEffect(() => {
+    const loadMessages = async () => {
+      if (activeChatId) {
+        const dbMsgs = await window.electron.db.getMessages(activeChatId);
+        setMessages((prev) => ({ ...prev, [activeChatId]: dbMsgs }));
+      }
+    };
+    loadMessages();
+  }, [activeChatId]);
+
   // Handle Project Change
   const activeProject =
     projects.find((p) => p.id === activeProjectId) || projects[0];
 
   // Send mock message
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!inputValue.trim() && attachedImages.length === 0) return;
 
     const userMsgId = `m-user-${Date.now()}`;
@@ -84,6 +156,12 @@ export default function App() {
       content: inputValue,
       attachments: attachedImages.length > 0 ? [...attachedImages] : undefined,
     };
+
+    // Persist User Message
+    await window.electron.db.saveMessage(
+      { ...userMsg, chatId: activeChatId, parentId: null },
+      userMsg.content,
+    );
 
     const currentChatMsgs = messages[activeChatId] || [];
     const updatedMsgs = [...currentChatMsgs, userMsg];
@@ -96,7 +174,7 @@ export default function App() {
     setAttachedImages([]);
 
     // Trigger mock assistant response
-    setTimeout(() => {
+    setTimeout(async () => {
       const assistantMsgId = `m-assistant-${Date.now()}`;
       const responses = [
         `I received your query. In your project context "${activeProject.name}", we are querying documents under: ${activeProject.connectors.join(', ')}.\n\nHere is a mock response matching model ${model} with sampler settings: Temp=${samplerSettings.temperature}, TopP=${samplerSettings.topP}.`,
@@ -111,6 +189,21 @@ export default function App() {
         siblings: responses,
         activeSiblingIndex: 0,
       };
+
+      // Persist Assistant Message and Siblings
+      await window.electron.db.saveMessage(
+        { ...assistantMsg, chatId: activeChatId, parentId: userMsgId },
+        responses[0],
+      );
+      // Add other mock siblings to DB
+      // eslint-disable-next-line no-plusplus
+      for (let i = 1; i < responses.length; i++) {
+        // eslint-disable-next-line no-await-in-loop
+        await window.electron.db.addMessageSibling(
+          assistantMsgId,
+          responses[i],
+        );
+      }
 
       setMessages((prev) => ({
         ...prev,
@@ -149,12 +242,15 @@ export default function App() {
     setMessages({ ...messages, [activeChatId]: updated });
   };
 
-  const handleRetryMessage = (msgId: string) => {
+  const handleRetryMessage = async (msgId: string) => {
     const chatMsgs = messages[activeChatId] || [];
+    const newSibling = `Regenerated output using current temperature ${samplerSettings.temperature}:\n\nHere is a newly generated response showing that we preserved the previous responses in the sibling list.`;
+
+    await window.electron.db.addMessageSibling(msgId, newSibling);
+
     const updated = chatMsgs.map((msg) => {
       if (msg.id === msgId) {
         const siblings = msg.siblings || [msg.content];
-        const newSibling = `Regenerated output (${siblings.length + 1}) using current temperature ${samplerSettings.temperature}:\n\nHere is a newly generated response showing that we preserved the previous responses in the sibling list.`;
         const updatedSiblings = [...siblings, newSibling];
         return {
           ...msg,
@@ -171,6 +267,7 @@ export default function App() {
 
   const handleCopyText = (text: string) => {
     navigator.clipboard.writeText(text);
+    // eslint-disable-next-line no-alert
     alert('Copied to clipboard!');
   };
 
@@ -184,8 +281,11 @@ export default function App() {
     setSelectedMessageIds(updatedSelection);
   };
 
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = async () => {
     const currentMsgs = messages[activeChatId] || [];
+    // Note: In a real app we might want a batch delete IPC call
+    // Individual message delete isn't in dbService yet.
+    // Let's just update the local state for now, but in Phase 7 we'll need this.
     const updated = currentMsgs.filter(
       (msg) => !selectedMessageIds.has(msg.id),
     );
@@ -194,10 +294,10 @@ export default function App() {
     setSelectionMode(false);
   };
 
-  const handleForkSelection = () => {
+  const handleForkSelection = async () => {
     if (selectedMessageIds.size === 0) return;
     const forkId = `c-fork-${Date.now()}`;
-    const forkName = `↳ Fork: Branch ${chats.length - 2}`;
+    const forkName = `↳ Fork: Branch ${chats.length - 1}`;
     const newChat: Chat = {
       id: forkId,
       name: forkName,
@@ -205,13 +305,34 @@ export default function App() {
       hidden: false,
     };
 
+    await window.electron.db.saveChat({
+      id: forkId,
+      projectId: activeProjectId,
+      name: forkName,
+      isHidden: false,
+    });
+
     const currentMsgs = messages[activeChatId] || [];
-    const forkedMsgs = currentMsgs
-      .filter((msg) => selectedMessageIds.has(msg.id))
-      .map((msg) => ({ ...msg, id: `fork-${msg.id}-${Date.now()}` }));
+    const forkedMsgs = currentMsgs.filter((msg) =>
+      selectedMessageIds.has(msg.id),
+    );
+
+    // eslint-disable-next-line no-restricted-syntax
+    for (const msg of forkedMsgs) {
+      const newMsgId = `fork-${msg.id}-${Date.now()}`;
+      // eslint-disable-next-line no-await-in-loop
+      await window.electron.db.saveMessage(
+        { ...msg, id: newMsgId, chatId: forkId },
+        msg.content,
+      );
+      // If there were siblings, we should ideally fork them too, but keeping it simple for now.
+    }
+
+    // Refresh messages for the new chat
+    const dbMsgs = await window.electron.db.getMessages(forkId);
 
     setChats([...chats, newChat]);
-    setMessages({ ...messages, [forkId]: forkedMsgs });
+    setMessages({ ...messages, [forkId]: dbMsgs });
     setActiveChatId(forkId);
     setSelectedMessageIds(new Set());
     setSelectionMode(false);
@@ -223,6 +344,7 @@ export default function App() {
       .map((msg) => `[${msg.sender.toUpperCase()}]\n${msg.content}\n`)
       .join('\n---\n\n');
     navigator.clipboard.writeText(exportString);
+    // eslint-disable-next-line no-alert
     alert('Copied entire chat script to clipboard!');
   };
 
@@ -243,18 +365,38 @@ export default function App() {
     setTools({ ...tools, [toolName]: !tools[toolName] });
   };
 
-  const handleDeleteChat = (e: React.MouseEvent, chatId: string) => {
+  const handleDeleteChat = async (e: React.MouseEvent, chatId: string) => {
     e.stopPropagation();
+    await window.electron.db.deleteChat(chatId);
     setChats(chats.filter((c) => c.id !== chatId));
-    if (activeChatId === chatId) setActiveChatId('c1');
+    if (activeChatId === chatId) {
+      const remainingChats = chats.filter((c) => c.id !== chatId);
+      if (remainingChats.length > 0) {
+        setActiveChatId(remainingChats[0].id);
+      } else {
+        setActiveChatId('');
+      }
+    }
   };
 
-  const handleHideChat = (e: React.MouseEvent, chatId: string) => {
+  const handleHideChat = async (e: React.MouseEvent, chatId: string) => {
     e.stopPropagation();
-    setChats(chats.map((c) => (c.id === chatId ? { ...c, hidden: true } : c)));
+    const chat = chats.find((c) => c.id === chatId);
+    if (chat) {
+      const updatedChat = {
+        ...chat,
+        hidden: true,
+        projectId: activeProjectId,
+      };
+      await window.electron.db.saveChat({
+        ...updatedChat,
+        isHidden: true,
+      });
+      setChats(chats.map((c) => (c.id === chatId ? updatedChat : c)));
+    }
   };
 
-  const handleNewChat = () => {
+  const handleNewChat = async () => {
     const newId = `c-${Date.now()}`;
     const newChat: Chat = {
       id: newId,
@@ -262,24 +404,39 @@ export default function App() {
       parentId: null,
       hidden: false,
     };
+
+    await window.electron.db.saveChat({
+      id: newChat.id,
+      projectId: activeProjectId,
+      name: newChat.name,
+      isHidden: false,
+    });
+
+    const initMsg = {
+      id: `m-init-${Date.now()}`,
+      sender: 'assistant' as const,
+      content:
+        'Hello! I am Chatterbox. Start typing below to begin a new conversation.',
+    };
+
+    await window.electron.db.saveMessage(
+      { ...initMsg, chatId: newId, parentId: null },
+      initMsg.content,
+    );
+
     setChats([...chats, newChat]);
     setMessages({
       ...messages,
-      [newId]: [
-        {
-          id: `m-init-${Date.now()}`,
-          sender: 'assistant',
-          content:
-            'Hello! I am Chatterbox. Start typing below to begin a new conversation.',
-        },
-      ],
+      [newId]: [initMsg],
     });
     setActiveChatId(newId);
   };
 
-  const handleNewProject = () => {
+  const handleNewProject = async () => {
+    // eslint-disable-next-line no-alert
     const name = prompt('Enter project name:');
     if (!name) return;
+    // eslint-disable-next-line no-alert
     const connectorsInput = prompt(
       'Enter data directory path (comma separated):',
     );
@@ -292,6 +449,8 @@ export default function App() {
       summary: `A new workspace focusing on local data ingestion.`,
       connectors,
     };
+
+    await window.electron.db.saveProject(newProject);
     setProjects([...projects, newProject]);
     setActiveProjectId(newProject.id);
   };
@@ -323,7 +482,7 @@ export default function App() {
               .find((c) => c.id === activeChatId)
               ?.name.replace('↳ Fork: ', '') || 'No Active Chat'
           }
-          activeProjectName={activeProject.name}
+          activeProjectName={activeProject?.name || 'No Project'}
           provider={provider}
           setProvider={setProvider}
           model={model}

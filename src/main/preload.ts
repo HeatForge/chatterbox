@@ -22,6 +22,22 @@ const electronHandler = {
       ipcRenderer.once(channel, (_event, ...args) => func(...args));
     },
   },
+  db: {
+    getProjects: () => ipcRenderer.invoke('db:getProjects'),
+    saveProject: (project: any) =>
+      ipcRenderer.invoke('db:saveProject', project),
+    deleteProject: (id: string) => ipcRenderer.invoke('db:deleteProject', id),
+    getChats: (projectId?: string) =>
+      ipcRenderer.invoke('db:getChats', projectId),
+    saveChat: (chat: any) => ipcRenderer.invoke('db:saveChat', chat),
+    deleteChat: (id: string) => ipcRenderer.invoke('db:deleteChat', id),
+    getMessages: (chatId: string) =>
+      ipcRenderer.invoke('db:getMessages', chatId),
+    saveMessage: (message: any, content: string) =>
+      ipcRenderer.invoke('db:saveMessage', message, content),
+    addMessageSibling: (messageId: string, content: string) =>
+      ipcRenderer.invoke('db:addMessageSibling', messageId, content),
+  },
 };
 
 contextBridge.exposeInMainWorld('electron', electronHandler);
