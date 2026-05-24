@@ -102,7 +102,31 @@ Stores alternative outputs generated during retries.
 
 ---
 
-## 4. UI Grid & Panel Spec
+## 4. Icon Design Language
+
+To maintain a professional aesthetic and ensure consistent UX, Chatterbox uses **Material Symbols (Rounded variant)**. The following mapping defines the intent for each symbol used in the UI.
+
+| Intent | Symbol Name | Usage Context |
+| :--- | :--- | :--- |
+| **Project** | `folder` / `work` | Sidebar project selector and workspace actions. |
+| **Chat** | `chat_bubble` | Individual conversation threads in the tree view. |
+| **Fork/Branch** | `fork_right` | Child threads and branching actions. |
+| **Settings** | `settings` | Sampler panel and app configuration toggles. |
+| **User** | `person` | User message avatars and profile-related UI. |
+| **Assistant** | `smart_toy` | AI assistant avatars and system-level messages. |
+| **Attachment** | `attach_file` / `image` | Input bar file uploads and image previews. |
+| **Send** | `send` | Chat message submission button. |
+| **Retry/Redo** | `refresh` | Assistant message regeneration action. |
+| **Copy** | `content_copy` | Clipboard actions for messages and logs. |
+| **Search** | `search` | Tool badges and global command palette. |
+| **RAG/Docs** | `description` | Document ingestion tools and file connectors. |
+| **Delete** | `delete` | Destructive actions (deleting chats/messages). |
+| **Visibility** | `visibility` / `visibility_off` | Hiding or revealing threads/elements. |
+| **Collapse** | `chevron_left` / `chevron_right` | Sidebar and panel expansion/retraction. |
+
+---
+
+## 5. UI Grid & Panel Spec
 
 Chatterbox uses a responsive 3-column layout built with CSS flexbox and grid containers.
 
@@ -139,42 +163,49 @@ This breakdown serves as an action plan for developers and agents to implement C
     *   Create mock components for tree-views, sliders, file input previews, and tool badges.
     *   Incorporate local states to demonstrate message sibling switching, selection modes, and chat deletion/hiding.
 
-### Phase 2: Native Storage & SQLite Integration
+### Phase 2: Material Icons Transition & Icon Language
+*   **Tasks**:
+    *   Replace all implementation emojis with Google Material Icons.
+    *   Integrate Material Symbols font (Rounded variant preferred for glassmorphic aesthetic).
+    *   Standardize icon sizes (20px for sidebar, 24px for header, 18px for inline actions).
+    *   Document the Icon Design Language in this specification.
+
+### Phase 3: Native Storage & SQLite Integration
 *   **Tasks**:
     *   Integrate `better-sqlite3` within the Electron main process.
     *   Create database schemas for projects, chats, messages, and siblings.
     *   Expose secure database operations to the renderer via IPC (`main/preload.ts`).
     *   Replace React memory state with SQLite persistence, loading threads and child forks dynamically on boot.
 
-### Phase 3: Provider API Client & Streaming Connection
+### Phase 4: Provider API Client & Streaming Connection
 *   **Tasks**:
     *   Install `@openrouter/api` or set up standard streaming connection templates for OpenRouter, and custom fetch templates for Anthropic, and OpenAI.
     *   Implement secure API key configuration and encrypted disk storage (via Node `crypto` or Electron `safeStorage`).
     *   Configure IPC communication channels to stream assistant answers block-by-block.
     *   Implement user controls for toggling active provider, selecting models, and sending user messages with attachments.
 
-### Phase 4: Sibling Management & Thread Branching Logic
+### Phase 5: Sibling Management & Thread Branching Logic
 *   **Tasks**:
     *   Implement the "Redo/Retry" action on assistant messages.
     *   Save regenerated responses into the `message_siblings` table and wire up the arrow navigation controls.
     *   Write database queries to fetch all siblings for a message on selection.
     *   Verify that navigation between message states updates the UI.
 
-### Phase 5: Left Sidebar Tree View & Operations
+### Phase 6: Left Sidebar Tree View & Operations
 *   **Tasks**:
     *   Create a tree-view listing component in the left sidebar that processes `parent_id` relationships.
     *   Ensure child forks render indented underneath their parent nodes.
     *   Add hover action triggers for deleting threads or toggling the `hidden` field.
     *   Implement collapsible/expandable states for nested thread trees.
 
-### Phase 6: Right Sidebar Samplers & Selection Mode
+### Phase 7: Right Sidebar Samplers & Selection Mode
 *   **Tasks**:
     *   Connect right sidebar sliders to the API client parameters (Temperature, Max Tokens, Top-P, Presence Penalty).
     *   Wire the system prompt editor to the active chat's session metadata.
     *   Implement the selection mode workflow: toggling selection mode displays checkboxes next to chat messages.
     *   Configure batch operations: "Delete Selected" and "Fork Selected" (which clones the selected message range into a new child thread).
 
-### Phase 7: Document Ingestion, Vectors & Local RAG
+### Phase 8: Document Ingestion, Vectors & Local RAG
 *   **Tasks**:
     *   Write Main Process functions to read local files, scrape directories, and connect to GitHub APIs.
     *   Implement document splitting and text chunking routines.
@@ -182,7 +213,7 @@ This breakdown serves as an action plan for developers and agents to implement C
     *   Add a local index database (like SQLite with vector search extension or HNSWLib).
     *   Implement similarity search to retrieve relevant text chunks and inject them into LLM payloads.
 
-### Phase 8: Cross-Chat Context Summarization
+### Phase 9: Cross-Chat Context Summarization
 *   **Tasks**:
     *   Configure a background summarization agent that runs whenever a chat session is idle.
     *   Create an index of chat summaries grouped by project.
