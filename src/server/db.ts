@@ -1,14 +1,20 @@
 import "server-only";
 
+import { PrismaNeon } from "@prisma/adapter-neon";
 import { PrismaClient } from "../../generated/prisma";
 
-const createPrismaClient = () =>
-  new PrismaClient({
+import { env } from "~/env";
+
+const createPrismaClient = () => {
+  const adapter = new PrismaNeon({ connectionString: env.DATABASE_URL });
+  return new PrismaClient({
+    adapter,
     log:
       process.env.NODE_ENV === "development"
         ? ["query", "error", "warn"]
         : ["error"],
   });
+};
 
 const globalForPrisma = globalThis as unknown as {
   prisma: ReturnType<typeof createPrismaClient> | undefined;
