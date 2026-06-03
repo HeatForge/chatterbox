@@ -7,11 +7,12 @@ import { auth } from "~/server/better-auth";
 import { getSession } from "~/server/better-auth/server";
 import { api, HydrateClient } from "~/trpc/server";
 import styles from "./index.module.css";
+import TestOpenrouter from "./_components/TestOpenrouter";
 
 export default async function Home() {
   const hello = await api.post.hello({ text: "from tRPC" });
   const session = await getSession();
-
+  
   if (session?.user) {
     void api.post.getLatest.prefetch();
   }
@@ -95,6 +96,7 @@ export default async function Home() {
 
           {session?.user && <LatestPost />}
         </div>
+        <TestOpenrouter />
       </main>
     </HydrateClient>
   );
