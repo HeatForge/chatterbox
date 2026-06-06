@@ -7,16 +7,19 @@ import { auth } from "~/server/better-auth";
 import { getSession } from "~/server/better-auth/server";
 import { api, HydrateClient } from "~/trpc/server";
 import styles from "./index.module.css";
-import TestOpenrouter from "./_components/TestOpenrouter";
 
-export default async function Home() {
+
+export default async function Home({ searchParams }: { searchParams: Promise<{ wasBooted: string }> }) {
+
   const hello = await api.post.hello({ text: "from tRPC" });
   const session = await getSession();
-  
+  const params = await searchParams;
+  const wasBooted = params.wasBooted === "true";
+  console.log("Was booted: ", params);
+
   if (session?.user) {
     void api.post.getLatest.prefetch();
   }
-
   return (
     <HydrateClient>
       <main className={styles.main}>
@@ -96,7 +99,9 @@ export default async function Home() {
 
           {session?.user && <LatestPost />}
         </div>
-        <TestOpenrouter />
+        {wasBooted && <p className={styles.showcaseText}>You need to login to chat</p>}
+        {wasBooted}
+        <Link className={styles.loginButton} href="/chat">Go chat</Link>
       </main>
     </HydrateClient>
   );
